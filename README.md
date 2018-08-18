@@ -10,7 +10,7 @@ Authentication and encryption are not included.
 ## Go Get
 
 ```bash
-go get http://www.github.com/magahet/smtp-api
+go get github.com/magahet/smtp-api
 ```
 
 # Run

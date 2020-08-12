@@ -14,3 +14,6 @@ stop:
 
 remove:
 	docker rm smtp-api
+
+docker-push:
+	docker tag smtp-api magahet/smtp-api:latest && docker push magahet/smtp-api:latest

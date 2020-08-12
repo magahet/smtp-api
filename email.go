@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net/smtp"
@@ -19,6 +20,34 @@ type Sender struct {
 	port int
 }
 
+type loginAuth struct {
+	username, password string
+}
+
+// LoginAuth is used for smtp login auth
+func LoginAuth(username, password string) smtp.Auth {
+	return &loginAuth{username, password}
+}
+
+func (a *loginAuth) Start(server *smtp.ServerInfo) (string, []byte, error) {
+	return "LOGIN", []byte(a.username), nil
+}
+
+func (a *loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
+	if more {
+		switch string(fromServer) {
+		case "Username:":
+			return []byte(a.username), nil
+		case "Password:":
+			return []byte(a.password), nil
+		default:
+			return nil, errors.New("Unknown from server")
+		}
+	}
+	return nil, nil
+}
+
+// NewSender is used for smtp sending
 func NewSender(host string, port int) *Sender {
 	return &Sender{host, port}
 }
@@ -49,39 +78,13 @@ func (message *Message) Body() string {
 	return body
 }
 
-func (s *Sender) Send(message *Message) error {
-	conn, err := smtp.Dial(s.HostString())
+func (s *Sender) Send(message *Message, user string, pass string) error {
+	auth := LoginAuth(user, pass)
+	msg := []byte(message.Body())
+	err := smtp.SendMail(s.HostString(), auth, message.from, message.to, msg)
 	if err != nil {
 		return err
 	}
-
-	// step 2: add all from and to
-	if err = conn.Mail(message.from); err != nil {
-		return err
-	}
-	for _, k := range message.to {
-		if err = conn.Rcpt(k); err != nil {
-			return err
-		}
-	}
-
-	// Data
-	w, err := conn.Data()
-	if err != nil {
-		return err
-	}
-
-	_, err = w.Write([]byte(message.Body()))
-	if err != nil {
-		return err
-	}
-
-	err = w.Close()
-	if err != nil {
-		return err
-	}
-
-	conn.Quit()
 
 	log.Println("Mail sent successfully")
 	return nil

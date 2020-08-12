@@ -1,34 +1,36 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"net/http"
 	"os"
-	"strconv"
 
 	"github.com/pkg/errors"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
-var Server string
-var Port int = 25
+var server, user, pass string
+var port int
 
 func main() {
+	flag.IntVar(&port, "port", 587, "SMTP Server")
+	flag.StringVar(&user, "user", "", "user")
+	flag.StringVar(&pass, "pass", "", "pass")
+
+	flag.Parse()
+
 	if len(os.Args) < 2 {
 		log.Fatal("You must specify an smtp server")
 	}
-	Server = os.Args[1]
-	if len(os.Args) == 3 {
-		var err error
-		Port, err = strconv.Atoi(os.Args[2])
-		if err != nil {
-			log.Fatal("SMTP port not valid")
-		}
-	}
+	server = os.Args[1]
+
 	// Creates a gin router with default middleware:
 	// logger and recovery (crash-free) middleware
 	router := gin.Default()
+	router.Use(cors.Default())
 
 	router.POST("/message", sendMessage)
 
@@ -62,9 +64,9 @@ func sendMessage(c *gin.Context) {
 		return
 	}
 
-	sender := NewSender(Server, Port)
+	sender := NewSender(server, port)
 	msg := &Message{req.From, req.Subject, req.Text, req.To}
-	if err := sender.Send(msg); err != nil {
+	if err := sender.Send(msg, user, pass); err != nil {
 		wrappedError := errors.Wrap(err, "Could not send email")
 		c.JSON(http.StatusInternalServerError,
 			gin.H{"status": "error", "message": wrappedError.Error()})

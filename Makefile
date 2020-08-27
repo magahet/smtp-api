@@ -1,19 +1,29 @@
-.PHONY: build run create start stop remove
-
+.PHONY: build run update start stop remove restart
+	
 build:
-	docker build -t smtp-api .
+	docker build -t penpal-api .
 
 run:
-	docker run --rm --name smtp-api -d -p 8083:80 --env-file env_vars smtp-api
+	docker run --link mongo --rm --name penpal-api -d -p 8001:8001 --env-file env_vars penpal-api
+
+update: stop build run
 
 start:
-	docker start smtp-api
+	docker start penpal-api
 
 stop:
-	docker stop smtp-api
+	docker stop penpal-api
 
-remove:
-	docker rm smtp-api
+restart: stop run
 
-docker-push:
-	docker tag smtp-api magahet/smtp-api:latest && docker push magahet/smtp-api:latest
+db-run:
+	docker run --rm --name penpal-db -d -p 27017:27017 mongo
+
+db-start:
+	docker start penpal-db
+
+db-stop:
+	docker stop penpal-db
+
+db-ui-run:
+	docker run -d --rm --name mongo-express --link mongo:mongo -p 8111:8081 mongo-express

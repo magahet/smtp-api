@@ -1,23 +1,26 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"log"
-	"net/smtp"
+	"os"
+	"smtp"
+	"strconv"
 	"strings"
+	"text/template"
 )
 
-type Message struct {
+const (
+	templatePath = "email.tmpl"
+)
+
+type message struct {
 	from    string
 	subject string
 	text    string
 	to      []string
-}
-
-type Sender struct {
-	host string
-	port int
 }
 
 type loginAuth struct {
@@ -47,17 +50,8 @@ func (a *loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
 	return nil, nil
 }
 
-// NewSender is used for smtp sending
-func NewSender(host string, port int) *Sender {
-	return &Sender{host, port}
-}
-
-func (s *Sender) HostString() string {
-	return fmt.Sprintf("%s:%d", s.host, s.port)
-}
-
-func (mail *Sender) NewMessage(from, subject, text string, to ...string) *Message {
-	return &Message{
+func newMessage(from, subject, text string, to ...string) *message {
+	return &message{
 		from:    from,
 		subject: subject,
 		text:    text,
@@ -65,7 +59,7 @@ func (mail *Sender) NewMessage(from, subject, text string, to ...string) *Messag
 	}
 }
 
-func (message *Message) Body() string {
+func (message *message) Body() []byte {
 	body := ""
 	body += fmt.Sprintf("From: %s\r\n", message.from)
 	if len(message.to) > 0 {
@@ -75,13 +69,39 @@ func (message *Message) Body() string {
 	body += fmt.Sprintf("Subject: %s\r\n", message.subject)
 	body += "\r\n" + message.text
 
-	return body
+	return []byte(body)
 }
 
-func (s *Sender) Send(message *Message, user string, pass string) error {
-	auth := LoginAuth(user, pass)
-	msg := []byte(message.Body())
-	err := smtp.SendMail(s.HostString(), auth, message.from, message.to, msg)
+func sendEmail(event *Event) error {
+
+	smtpServer := os.Getenv("SMTP_SERVER")
+	smtpPort, err := strconv.Atoi(os.Getenv("SMTP_PORT"))
+	if err != nil {
+		return err
+	}
+	smtpUser := os.Getenv("SMTP_USER")
+	smtpPass := os.Getenv("SMTP_PASS")
+	to := os.Getenv("SMTP_TO")
+	log.Println(to)
+
+	// Render message body with email template
+	t, err := template.ParseFiles(templatePath)
+	if err != nil {
+		return err
+	}
+
+	var msg bytes.Buffer
+	if err := t.Execute(&msg, event); err != nil {
+		return err
+	}
+
+	subject := fmt.Sprintf("[%s] %s", event.Type, event.Summary)
+	message := newMessage(smtpUser, subject, msg.String(), to)
+	log.Println(string(message.Body()))
+
+	auth := LoginAuth(smtpUser, smtpPass)
+	hostString := fmt.Sprintf("%s:%d", smtpServer, smtpPort)
+	err = smtp.SendMail(hostString, auth, smtpUser, message.to, message.Body())
 	if err != nil {
 		return err
 	}

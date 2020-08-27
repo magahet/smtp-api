@@ -1,80 +1,93 @@
 package main
 
 import (
-	"flag"
+	"github.com/gin-gonic/gin"
 	"log"
 	"net/http"
-	"os"
-
-	"github.com/pkg/errors"
-
-	"github.com/gin-contrib/cors"
-	"github.com/gin-gonic/gin"
 )
 
 var server, user, pass string
-var port int
+var servicePort, smtpPort int
+
+func handleGetEvents(c *gin.Context) {
+	var loadedEvents, err = GetAllEvents()
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"msg": err})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"events": loadedEvents})
+}
+
+func handleGetEvent(c *gin.Context) {
+	var event Event
+	if err := c.BindUri(&event); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": err})
+		return
+	}
+	var loadedEvent, err = GetEventByID(event.ID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"msg": err})
+		return
+	}
+	c.JSON(http.StatusOK, loadedEvent)
+}
+
+func handleCreateEvent(c *gin.Context) {
+	var event Event
+	if err := c.ShouldBindJSON(&event); err != nil {
+		log.Print(err)
+		c.JSON(http.StatusBadRequest, gin.H{"msg": err})
+		return
+	}
+	id, err := Create(&event)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"msg": err})
+		return
+	}
+	if err := sendEmail(&event); err != nil {
+		log.Print(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"msg": err})
+	}
+	c.JSON(http.StatusOK, gin.H{"id": id})
+}
+
+func handleUpdateEvent(c *gin.Context) {
+	var event Event
+	if err := c.ShouldBindJSON(&event); err != nil {
+		log.Print(err)
+		c.JSON(http.StatusBadRequest, gin.H{"msg": err})
+		return
+	}
+	savedEvent, err := Update(&event)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"msg": err})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"event": savedEvent})
+}
 
 func main() {
-	flag.IntVar(&port, "port", 587, "SMTP Server")
-	flag.StringVar(&user, "user", "", "user")
-	flag.StringVar(&pass, "pass", "", "pass")
-
-	flag.Parse()
-
-	if len(os.Args) < 2 {
-		log.Fatal("You must specify an smtp server")
-	}
-	server = os.Args[1]
-
 	// Creates a gin router with default middleware:
 	// logger and recovery (crash-free) middleware
-	router := gin.Default()
-	router.Use(cors.Default())
+	r := gin.Default()
 
-	router.POST("/message", sendMessage)
+	// Middlewares
+	r.Use(gin.Logger())
+	r.Use(gin.Recovery())
+	r.Use(cors())
+
+	v1 := r.Group("/v1")
+	{
+		events := v1.Group("/events")
+		{
+			events.GET("/events/:id", handleGetEvent)
+			events.GET("/events/", handleGetEvents)
+			events.PUT("/events/", handleCreateEvent)
+			events.POST("/events/", handleUpdateEvent)
+		}
+	}
 
 	// By default it serves on :8080 unless a
 	// PORT environment variable was defined.
-	router.Run()
-	// router.Run(":3000") for a hard coded port
-}
-
-type jsonError struct {
-	err error
-}
-
-type EmailRequest struct {
-	From    string   `form:"from" json:"from" binding:"required"`
-	Subject string   `form:"subject" json:"subject" binding:"required"`
-	Text    string   `form:"text" json:"text" binding:"required"`
-	To      []string `form:"to" json:"to" binding:"required"`
-}
-
-func (err jsonError) Error() string {
-	return errors.Wrap(err, "request json missing fields or invalid").Error()
-}
-
-func sendMessage(c *gin.Context) {
-	var req EmailRequest
-	if err := c.ShouldBind(&req); err != nil {
-		// wrappedError := errors.Wrap(err, "Could not parse request or missing fields")
-		c.JSON(http.StatusBadRequest,
-			gin.H{"status": "fail", "data": err})
-		return
-	}
-
-	sender := NewSender(server, port)
-	msg := &Message{req.From, req.Subject, req.Text, req.To}
-	if err := sender.Send(msg, user, pass); err != nil {
-		wrappedError := errors.Wrap(err, "Could not send email")
-		c.JSON(http.StatusInternalServerError,
-			gin.H{"status": "error", "message": wrappedError.Error()})
-		return
-	}
-
-	log.Println("Message sent")
-
-	c.JSON(http.StatusOK,
-		gin.H{"status": "success", "data": nil})
+	r.Run()
 }

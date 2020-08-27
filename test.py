@@ -4,15 +4,18 @@ import requests
 import json
 
 
-response = requests.post(
-    'http://localhost:8080/message',
+response = requests.put(
+    "http://localhost:8001/event",
     {
-        'from': 'from@blah.com',
-        'subject': 'testing',
-        'text': 'blah blah',
-        'to': ['to@blah.com'],
-    }
+        "type": "Planned Event",
+        "contact": "gmendiola@connexity.com",
+        "date": "2020-08-19Z22:39:06",
+        "summary": "test summary",
+        "body": "test body",
+        "impact": "test impact",
+        "other": "test other",
+    },
 )
 
-print response
-print json.dumps(response.json(), indent=1)
+print(response)
+print(json.dumps(response.json(), indent=1))
